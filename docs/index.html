@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ResilientOracle Prices</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+            text-align: center;
+        }
+
+        h1 {
+            color: #333;
+            margin-top: 20px;
+        }
+
+        #prices {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: flex-start;
+            margin: 20px;
+        }
+
+        .asset {
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 10px;
+            margin: 10px;
+            background-color: #fff;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            min-width: 300px;
+            flex: 1;
+            text-align: left;
+            /* Align text to left */
+        }
+
+        .asset h2 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        .price {
+            margin: 5px 0;
+        }
+
+        button {
+            background-color: #007bff;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        .error {
+            color: #ff0000;
+            font-style: italic;
+        }
+
+        select {
+            padding: 8px 10px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>ResilientOracle Prices</h1>
+    <div>
+        <select id="priceSelect">
+            <option value="0">SMR Price</option>
+            <option value="1">DEEPR Price</option>
+            <option value="2">USDT Price</option>
+        </select>
+    </div>
+    <div id="prices"></div>
+    <button onclick="getPrices()">Get prices</button>
+    <script src="https://cdn.ethers.io/lib/ethers-5.0.umd.min.js" type="text/javascript"></script>
+    <script type="text/javascript">
+        async function getOracles(assetAddress) {
+            const oracles = [
+                {
+                    address: '0xf5B7fE2Ce6BA63dA9903Ab6B806d123E15AB2855',
+                    name: 'ResilientOracle'
+                },
+                {
+                    address: '0x699eB64887eaC65D775d95288de5a0eE25c44259',
+                    name: 'TwapOracle'
+                },
+                {
+                    address: '0x5A62242C8532482883DD411a638f59685379b006',
+                    name: 'PivotOracle'
+                },
+                {
+                    address: '0xb14714297bdb0fe923b57DC023bDD42A95b5fAd5',
+                    name: 'PythOracle'
+                },
+                {
+                    address: '0xb69520e394Aa0345862196D649DC2bd750d27c9F',
+                    name: 'SimplePriceOracle'
+                }
+            ];
+            const contractInstance = new ethers.Contract(oracles[0].address, ['function getTokenConfig(address) view returns (address asset, address[3] memory oracles, bool[3] memory enableFlagsForOracles)'], provider);
+            const tokenConfig = await contractInstance.getTokenConfig(assetAddress);
+            // Resilient Oracle always be first
+            let oraclesArray = [{
+                address: oracles[0].address,
+                name: oracles[0].name
+            }];
+            for (let i = 0; i < tokenConfig.oracles.length; i++) {
+                if (tokenConfig.enableFlagsForOracles[i]) {
+                    oraclesArray.push({
+                        address: tokenConfig.oracles[i],
+                        name: oracles.find(oracle => oracle.address === tokenConfig.oracles[i]).name
+                    });
+                }
+            }
+            console.log(oraclesArray);
+            return oraclesArray;
+        }
+        const provider = new ethers.providers.JsonRpcProvider('https://json-rpc.evm.shimmer.network');
+        const assets = [
+            {
+                address: '0x1074010000000000000000000000000000000000',
+                name: 'SMR'
+            },
+            {
+                address: '0x326f23422CE22Ee5fBb5F37f9fa1092d095546F8',
+                name: 'DEEPR'
+            },
+            {
+                address: '0xa4f8C7C1018b9dD3be5835bF00f335D9910aF6Bd',
+                name: 'USDT'
+            }
+        ];
+        async function getPrices() {
+            try {
+                const pricesDiv = document.getElementById('prices');
+                pricesDiv.innerHTML = '';
+                const select = document.getElementById('priceSelect');
+                const selectedIndex = select.selectedIndex;
+                const selectedAsset = assets[selectedIndex];
+                const assetDiv = document.createElement('div');
+                assetDiv.classList.add('asset');
+                const assetTitle = document.createElement('h2');
+                assetTitle.innerText = selectedAsset.name; // Only display asset name
+                assetDiv.appendChild(assetTitle);
+                pricesDiv.appendChild(assetDiv);
+                const decimals = await new ethers.Contract(selectedAsset.address, ['function decimals() view returns (uint8)'], provider).decimals();
+                let oracles = await getOracles(selectedAsset.address);
+                for (const oracle of oracles) {
+                    try {
+                        const contractInstance = new ethers.Contract(oracle.address, ['function getPrice(address) view returns (uint256)'], provider);
+                        const price = await contractInstance.getPrice(selectedAsset.address);
+                        const formattedPrice = ethers.utils.formatUnits(price, 18 + 18 - decimals);
+                        const priceElement = document.createElement('p');
+                        priceElement.classList.add('price');
+                        priceElement.innerText = `Price: ${formattedPrice} USD - ${oracle.name} Contract`;
+                        assetDiv.appendChild(priceElement);
+                    } catch (error) {
+                        const errorElement = document.createElement('p');
+                        errorElement.classList.add('error');
+                        errorElement.innerText = `Error retrieving price from ${oracle.name} contract: ${error.message}`;
+                        assetDiv.appendChild(errorElement);
+                    }
+                }
+            } catch (error) {
+                console.error('Error retrieving prices:', error);
+            }
+        }
+    </script>
+</body>
+
+</html>
